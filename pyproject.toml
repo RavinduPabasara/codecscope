@@ -1,0 +1,84 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codecscope"
+version = "0.1.0"
+description = "Measure how efficiently neural audio codecs tokenize audio: token rate, bitrate, codebook utilization, and reconstruction quality across DAC, EnCodec, SNAC, and Mimi"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Ravindu Pabasara Karunarathna", email = "karurpabe@gmail.com"}
+]
+maintainers = [
+    {name = "Ravindu Pabasara Karunarathna", email = "karurpabe@gmail.com"}
+]
+keywords = ["audio codec", "neural audio codec", "tokenizer", "dac", "encodec", "snac", "mimi", "rvq", "benchmark", "audio llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.21"]
+
+[project.scripts]
+codecscope = "codecscope.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/RavinduPabasara/codecscope"
+Documentation = "https://github.com/RavinduPabasara/codecscope#readme"
+Repository = "https://github.com/RavinduPabasara/codecscope"
+"Bug Tracker" = "https://github.com/RavinduPabasara/codecscope/issues"
+
+[project.optional-dependencies]
+audio = ["soundfile", "librosa"]
+quality = ["pystoi", "pesq"]
+dac = ["descript-audio-codec"]
+encodec = ["transformers", "torch"]
+snac = ["snac", "torch"]
+hf = ["transformers", "torch"]
+all = [
+    "soundfile",
+    "librosa",
+    "pystoi",
+    "pesq",
+    "descript-audio-codec",
+    "transformers",
+    "snac",
+    "torch",
+]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=21.0",
+    "flake8>=3.8",
+    "mypy>=0.800",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["codecscope*"]
+
+[tool.setuptools.package-data]
+codecscope = ["py.typed"]
+
+[tool.black]
+line-length = 88
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
