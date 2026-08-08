@@ -58,6 +58,7 @@ def analyze(
         codec_sample_rate=codec_rate,
         source_bit_depth=source_bit_depth,
         si_snr=scores.get("si_snr"),
+        si_snr_aligned=scores.get("si_snr_aligned"),
         stoi=scores.get("stoi"),
         pesq=scores.get("pesq"),
         delay_samples=scores.get("delay_samples"),

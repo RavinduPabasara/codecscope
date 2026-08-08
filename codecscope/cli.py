@@ -24,6 +24,7 @@ _COLUMNS = [
     ("multiscale", "Multi", 6),
     ("delay_samples", "Delay", 6),
     ("si_snr", "SI-SNR", 8),
+    ("si_snr_aligned", "SI-SNR+", 8),
     ("stoi", "STOI", 7),
     ("pesq", "PESQ", 7),
 ]

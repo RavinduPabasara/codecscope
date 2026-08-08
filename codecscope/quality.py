@@ -67,8 +67,13 @@ def detect_delay(
     interpretable.
 
     Positive means the reconstruction arrives late, negative that it arrives
-    early — SNAC 24 kHz comes back about 85 samples early. Returns 0 when
-    either signal is silent or too short to correlate.
+    early. Returns 0 when either signal is silent or too short to correlate.
+
+    Known limitation: on strongly periodic material the correlation peak can
+    land on a pitch period rather than the true offset. Measuring SNAC 24 kHz
+    gives -85 samples on a sweep, -1 on speech, and 196 on a trumpet loop —
+    a codec's delay does not actually vary that way. Treat this as a hint on
+    broadband or transient-rich audio and as unreliable on sustained tones.
     """
     ref, est = align(reference, estimate)
     n = ref.size
@@ -82,6 +87,39 @@ def detect_delay(
     lags = np.arange(-(n - 1), n)
     window = np.abs(lags) <= max_lag
     return int(lags[window][int(np.argmax(np.abs(correlation[window])))])
+
+
+def shift(
+    reference: np.ndarray, estimate: np.ndarray, lag: int
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Slide `estimate` back by `lag` samples and re-truncate both signals."""
+    if lag > 0:
+        return reference[: estimate.size - lag], estimate[lag:]
+    if lag < 0:
+        return reference[-lag:], estimate[: reference.size + lag]
+    return reference, estimate
+
+
+def si_snr_aligned(
+    reference: np.ndarray, estimate: np.ndarray, lag: Optional[int] = None
+) -> float:
+    """SI-SNR after compensating for codec delay.
+
+    Raw SI-SNR is what codec papers report, but it is not comparable across
+    codecs with different latencies: an 8-sample offset costs DAC 16 kHz
+    about 13 dB and DAC 24 kHz about 19 dB, which is enough to rank a 24 kbps
+    codec below an 8 kbps one purely as an alignment artifact.
+
+    Both numbers are reported. A large gap between them means the difference
+    is timing, not fidelity — and the raw figure stays available so published
+    comparisons remain reproducible.
+    """
+    if lag is None:
+        lag = detect_delay(reference, estimate)
+    ref, est = shift(*align(reference, estimate), lag)
+    if ref.size == 0:
+        return float("nan")
+    return si_snr(ref, est)
 
 
 def stoi(reference: np.ndarray, estimate: np.ndarray, sample_rate: int) -> float:
@@ -142,9 +180,11 @@ def evaluate(
     """
     if estimate is None:
         return {}
+    lag = detect_delay(reference, estimate)
     scores = {
         "si_snr": si_snr(reference, estimate),
-        "delay_samples": detect_delay(reference, estimate),
+        "si_snr_aligned": si_snr_aligned(reference, estimate, lag),
+        "delay_samples": lag,
     }
     if speech:
         for name, fn in (("stoi", stoi), ("pesq", pesq)):

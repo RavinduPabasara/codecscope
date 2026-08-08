@@ -49,6 +49,7 @@ class Report:
     source_bit_depth: int
     codec_sample_rate: int
     si_snr: Optional[float] = None
+    si_snr_aligned: Optional[float] = None
     stoi: Optional[float] = None
     pesq: Optional[float] = None
     delay_samples: Optional[int] = None
@@ -109,7 +110,7 @@ class Report:
             "compression_ratio": round(self.compression_ratio, 2),
             "multiscale": self.is_multiscale,
         }
-        for key in ("si_snr", "stoi", "pesq"):
+        for key in ("si_snr", "si_snr_aligned", "stoi", "pesq"):
             value = getattr(self, key)
             if value is not None:
                 d[key] = round(value, 4)
@@ -127,6 +128,7 @@ def build_report(
     codec_sample_rate: int,
     source_bit_depth: int = 16,
     si_snr: Optional[float] = None,
+    si_snr_aligned: Optional[float] = None,
     stoi: Optional[float] = None,
     pesq: Optional[float] = None,
     delay_samples: Optional[int] = None,
@@ -152,6 +154,7 @@ def build_report(
         source_bit_depth=source_bit_depth,
         codec_sample_rate=codec_sample_rate,
         si_snr=si_snr,
+        si_snr_aligned=si_snr_aligned,
         stoi=stoi,
         pesq=pesq,
         delay_samples=delay_samples,

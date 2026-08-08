@@ -35,16 +35,24 @@ codecscope sample.wav \
     --csv results.csv
 ```
 
-Real output, every codec against real weights, over a 2-second sweep:
+Real output on real audio — 8 seconds of LibriVox narration, every codec run
+against real weights:
 
 ```
-Codec             Books  Frame Hz  Tokens/s  Bitrate   Util     Compress  Multi  Delay  SI-SNR
------------------------------------------------------------------------------------------------
-snac:24khz        3      46.88     82.03     984.4     0.0099   716.8     yes    -85    -29.85
-kyutai/mimi@8     8      12.5      100.0     1100.0    0.0094   641.45    no      -1    -10.54
-encodec:24khz@6   8      75.0      600.0     6000.0    0.0833   117.6     no       -      5.56
-dac:44khz         9      86.13     775.2     7752.0    0.1359   91.02     no       -     16.79
-pcm:16            1      44100.0   44100.0   705600.0  0.4313   1.0       no       -     92.09
+Codec             Books  Frame Hz  Tokens/s  Bitrate   Util    Compress  Multi  Delay  SI-SNR  SI-SNR+  STOI    PESQ
+----------------------------------------------------------------------------------------------------------------------
+snac:24khz        3      46.88     82.03     984.4     0.0382  260.06    yes     -1    -0.47   -0.44    0.8412   -
+kyutai/mimi@8     8      12.5      100.0     1100.0    0.0435  232.73    no      -1     4.26    4.27    0.8886   -
+encodec:24khz@6   8      75.0      600.0     6000.0    0.3008  42.67     no       -     8.83    8.83    0.9374   -
+pcm:16            1      16000.0   16000.0   256000.0  0.3099  1.0       no       -    79.65   79.65    1.0      4.6433
+```
+
+and DAC on the same clip, from its own environment:
+
+```
+dac:16khz         12     50.0      600.04    6000.4    0.3089  42.66     no      -8    -0.23   12.92
+dac:44khz         9      86.13     775.2     7752.0    0.4347  33.02     no       -    14.39   14.39
+dac:24khz         32     75.0      2400.1    24001.0   0.4270  10.67     no      -8     2.49   21.12
 ```
 
 The bitrate column is derived independently — `token_rate × log2(codebook_size)` —
@@ -55,17 +63,29 @@ and lands on every codec's published figure:
 | SNAC 24 kHz | 984.4 bps | 0.98 kbps |
 | Mimi @8 | 1100.0 bps | 1.1 kbps |
 | EnCodec 24 kHz @6 | 6000.0 bps | 6 kbps |
+| DAC 16 kHz | 6000.4 bps | 6 kbps |
+| DAC 24 kHz | 24001.0 bps | 24 kbps |
 | DAC 44 kHz | 7752.0 bps | 8 kbps nominal (7752 is the exact math) |
 
-Four independent agreements are the tightest available check that the metric
+Six independent agreements are the tightest available check that the metric
 math is right.
 
-Two things that table makes visible. SNAC has 3 codebooks at a 46.9 Hz finest
-rate, yet 82 tokens/s rather than the 141 you would get by multiplying — the
-multi-scale case, and the reason this tool exists. And the cheapest codec by
-*bitrate* is not the cheapest by *token rate*: SNAC costs 82 tokens/s against
-Mimi's 100, even though Mimi runs at a quarter of SNAC's frame rate. If a
-language model is consuming these codes, that second column is your bill.
+Three things these tables make visible:
+
+**Token rate is not bitrate.** SNAC has 3 codebooks at a 46.9 Hz finest rate,
+yet costs 82 tokens/s rather than the 141 you would get by multiplying — the
+multi-scale case, and the reason this tool exists. And SNAC costs *fewer*
+tokens per second than Mimi despite Mimi running at a quarter of its frame
+rate. If a language model consumes these codes, that column is your bill.
+
+**Delay masquerades as distortion.** DAC's 16 kHz and 24 kHz models return
+8 samples early. Uncorrected, that costs them 13 and 19 dB, ranking the
+24 kbps model *below* the 8 kbps one. The `SI-SNR+` column compensates and
+restores the expected order: 21.12 > 14.39 > 12.92, monotonic in bitrate.
+
+**Codebook utilization needs real audio.** These figures are 3–4× higher than
+the same codecs measured on a synthetic sweep, because a chirp exercises a
+narrow slice of any codebook.
 
 Run it with no file to sweep a synthetic chirp — useful for a quick smoke test
 of a new backend:
@@ -106,17 +126,34 @@ for r in reports:            # sorted by token rate, cheapest first
 | `codebook_utilization` | Fraction of codebook entries actually emitted. Low values mean vocabulary you pay for but never use — a known RVQ collapse signature, and the audio analogue of a tokenizer's UNK rate. |
 | `compression_ratio` | Against the 16-bit PCM source. |
 | `si_snr` | Scale-invariant SNR in dB. Always available; scale-invariant because a codec is free to change gain and shouldn't be punished for it. |
+| `si_snr_aligned` | The same, after compensating for measured codec delay. Compare codecs on this; compare against papers on `si_snr`. |
+| `delay_samples` | Reconstruction offset in samples, positive for late. Reported, never silently corrected. |
 | `stoi` / `pesq` | Speech intelligibility. Opt-in via `--speech`. |
 
 ### Codec delay is reported, not silently corrected
 
-SNAC returns its reconstruction about 85 samples early. SI-SNR is computed
-**without** compensating for that, matching how codec papers report it —
-silently re-aligning would flatter every codec with latency. But a
-delay-driven score is indistinguishable from distortion unless you can see
-the delay, so `delay_samples` is measured by cross-correlation and reported
-alongside. A large delay with a poor SI-SNR means "check the alignment", not
-"this codec is bad".
+Codecs can shift their output in time, and an offset of a few samples is
+enough to destroy a score: DAC's 16 kHz and 24 kHz models return 8 samples
+early, which costs them 13 and 19 dB of apparent quality on real speech.
+
+Rather than pick one answer, `codecscope` reports both. `si_snr` is raw and
+matches how codec papers measure, so published figures stay reproducible.
+`si_snr_aligned` compensates for the measured delay. A large gap between them
+means the difference is timing, not fidelity.
+
+**Caveat on the delay figure itself.** It comes from cross-correlation, which
+on strongly periodic material can lock onto a pitch period instead of the
+true offset. Measuring SNAC 24 kHz gives −85 samples on a sweep, −1 on
+speech, and 196 on a trumpet loop — a codec's latency does not actually vary
+that way. Trust it on broadband or transient-rich audio; distrust it on
+sustained tones.
+
+### PESQ rarely applies to a codec comparison
+
+PESQ is defined only at 8 and 16 kHz. Most neural codecs operate at 24 kHz or
+above, so in a typical run it is computed for the baseline and skipped
+everywhere else — as in the speech table above. STOI has no such restriction
+and is the more useful of the two here.
 
 ### Chunked codecs emit more codes than their nominal bitrate
 

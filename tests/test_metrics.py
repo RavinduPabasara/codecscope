@@ -216,6 +216,48 @@ class TestDelayDetection:
         )
 
 
+class TestAlignedSISNR:
+    """Delay compensation, without which SI-SNR is not comparable across codecs.
+
+    An 8-sample offset costs DAC 16 kHz ~13 dB and DAC 24 kHz ~19 dB of
+    apparent quality — enough to rank a 24 kbps codec below an 8 kbps one on
+    real speech purely as an artifact of timing.
+    """
+
+    def test_recovers_quality_lost_to_a_pure_delay(self):
+        ref = audio.chirp(duration=0.4, sample_rate=16000)
+        delayed = np.concatenate([np.zeros(8, np.float32), ref])[: ref.size]
+        raw = quality.si_snr(ref, delayed)
+        aligned = quality.si_snr_aligned(ref, delayed)
+        assert aligned > raw + 10
+
+    def test_matches_raw_when_there_is_no_delay(self):
+        ref = audio.chirp(duration=0.3, sample_rate=16000)
+        est = ref + 0.02 * audio.sine(duration=0.3, sample_rate=16000, frequency=5000)
+        assert quality.si_snr_aligned(ref, est) == pytest.approx(
+            quality.si_snr(ref, est), abs=1e-9
+        )
+
+    def test_still_penalises_real_distortion(self):
+        # Alignment must not launder quantization damage into a good score.
+        from codecscope.adapters import PCMAdapter
+
+        ref = audio.chirp(duration=0.3, sample_rate=16000)
+        coarse = PCMAdapter("3").encode(ref).reconstruction
+        assert quality.si_snr_aligned(ref, coarse) < 20.0
+
+    def test_shift_helper_truncates_both_directions(self):
+        ref, est = quality.shift(np.arange(10.0), np.arange(10.0), 3)
+        assert ref.size == est.size == 7
+        ref, est = quality.shift(np.arange(10.0), np.arange(10.0), -4)
+        assert ref.size == est.size == 6
+
+    def test_reported_alongside_raw(self):
+        r = analyze(audio.chirp(duration=0.2, sample_rate=16000), 16000, "pcm:8")
+        assert r.si_snr is not None and r.si_snr_aligned is not None
+        assert "si_snr_aligned" in r.as_dict()
+
+
 class TestCompare:
     def test_sorted_by_token_rate(self):
         signal = audio.sine(duration=0.2, sample_rate=16000)
