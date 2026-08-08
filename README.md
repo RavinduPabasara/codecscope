@@ -70,6 +70,24 @@ and lands on every codec's published figure:
 Six independent agreements are the tightest available check that the metric
 math is right.
 
+### On a full song
+
+The same codecs over a complete 2:13 track (Karissa Hobbs, *Let's Go Fishin'*):
+
+```
+codec                   tok/s   bitrate    util  tokens(track)  SI-SNR+   secs
+------------------------------------------------------------------------------
+snac:24khz               82.0       984  0.2869         10,913    -7.56   33.0
+kyutai/mimi@8           100.0      1100  0.3315         13,304     1.26    9.7
+encodec:24khz@6         600.0      6000  0.8608         79,800     7.35    7.3
+pcm:16                22050.0    352800  0.6235      2,932,408    83.04    0.1
+```
+
+Token rate is identical to the 8-second measurement to the decimal — 82.0,
+100.0, 600.0 — confirming it is a genuine per-second constant and that
+estimating a track's cost by multiplying is sound. Encoding a 2-minute song
+takes 7–33 seconds per codec.
+
 Three things these tables make visible:
 
 **Token rate is not bitrate.** SNAC has 3 codebooks at a 46.9 Hz finest rate,
@@ -143,10 +161,14 @@ means the difference is timing, not fidelity.
 
 **Caveat on the delay figure itself.** It comes from cross-correlation, which
 on strongly periodic material can lock onto a pitch period instead of the
-true offset. Measuring SNAC 24 kHz gives −85 samples on a sweep, −1 on
-speech, and 196 on a trumpet loop — a codec's latency does not actually vary
-that way. Trust it on broadband or transient-rich audio; distrust it on
-sustained tones.
+true offset. Measuring SNAC 24 kHz gives −40 samples on a sweep, −1 on
+speech, 6 on orchestral music, and 196 on a trumpet loop — a codec's latency
+does not actually vary that way. Trust it on broadband or transient-rich
+audio; distrust it on sustained tones.
+
+Detection is FFT-based over a bounded, highest-energy window, so its cost
+does not grow with track length: 0.024 s on a 2-minute song, 0.037 s on five
+minutes.
 
 ### PESQ rarely applies to a codec comparison
 
@@ -175,13 +197,22 @@ that length. Dividing by the original input length instead inflates every
 rate by the padding ratio — 2.4% on a 2-second SNAC clip, enough to miss the
 published 0.98 kbps figure.
 
-### Codebook utilization is a corpus property, not a codec property
+### Codebook utilization needs a real corpus, and needs length
 
 Utilization counts the entries a codec actually emitted **on the audio you
-gave it**. A short or narrowband clip will under-use any codebook — the 0.057
-above is mostly a statement about a 2-second synthetic sweep, not about
-EnCodec. Measure it over a representative corpus before drawing conclusions,
-and compare codecs only on identical input.
+gave it**, so short or narrowband input under-uses any codebook. Measured on
+the same codecs across three input lengths:
+
+| Codec | 2s synthetic sweep | 8s real speech | 2:13 full song |
+|---|---|---|---|
+| SNAC 24 kHz | 0.0099 | 0.0382 | **0.2869** |
+| Mimi @8 | 0.0094 | 0.0435 | **0.3315** |
+| EnCodec 24 kHz @6 | 0.0833 | 0.3008 | **0.8608** |
+
+A short clip understates utilization by up to 7×, and it changes the verdict:
+on a full track EnCodec is using 86% of its codebook space while SNAC uses
+29%. Measure over a representative corpus, and compare codecs only on
+identical input.
 
 ### Variable-rate codecs must declare their configuration
 

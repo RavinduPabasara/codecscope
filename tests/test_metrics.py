@@ -208,6 +208,55 @@ class TestDelayDetection:
     def test_silent_input_does_not_crash(self):
         assert quality.detect_delay(np.zeros(100), np.zeros(100)) == 0
 
+    @pytest.mark.parametrize("shift", [0, 7, -13, 500])
+    def test_matches_direct_correlation(self, shift):
+        # The FFT path must agree exactly with textbook cross-correlation.
+        rng = np.random.default_rng(0)
+        ref = audio.chirp(duration=2.0, sample_rate=16000)
+        ref = (ref + 0.01 * rng.standard_normal(ref.size)).astype(np.float32)
+        if shift >= 0:
+            est = np.concatenate([np.zeros(shift, np.float32), ref])[: ref.size]
+        else:
+            est = np.concatenate([ref[-shift:], np.zeros(-shift, np.float32)])
+
+        centred_ref = ref - ref.mean()
+        centred_est = est - est.mean()
+        correlation = np.correlate(centred_est, centred_ref, mode="full")
+        lags = np.arange(-(ref.size - 1), ref.size)
+        inside = np.abs(lags) <= 2048
+        expected = int(lags[inside][int(np.argmax(np.abs(correlation[inside])))])
+
+        assert quality.detect_delay(ref, est) == expected == shift
+
+    def test_cost_does_not_grow_with_track_length(self):
+        """Guards against the O(N^2) correlation this replaced.
+
+        Correlating directly cost ~184 s on 64 s of audio and would have
+        taken ~26 minutes per codec on a 2-minute song, which made the
+        library unusable on exactly the material it exists to measure.
+        """
+        import time
+
+        def timed(seconds):
+            ref = audio.chirp(duration=seconds, sample_rate=22050)
+            est = np.concatenate([np.zeros(8, np.float32), ref])[: ref.size]
+            start = time.perf_counter()
+            assert quality.detect_delay(ref, est) == 8
+            return time.perf_counter() - start
+
+        short, long = timed(4.0), timed(64.0)
+        # 16x the samples must not cost anything like 16x the time.
+        assert long < max(0.5, short * 4)
+
+    def test_window_selection_prefers_loud_material(self):
+        # A recording that opens with silence must still align correctly.
+        rng = np.random.default_rng(1)
+        quiet = np.zeros(300_000, dtype=np.float32)
+        loud = (0.5 * rng.standard_normal(300_000)).astype(np.float32)
+        ref = np.concatenate([quiet, loud])
+        est = np.concatenate([np.zeros(21, np.float32), ref])[: ref.size]
+        assert quality.detect_delay(ref, est) == 21
+
     def test_delay_appears_in_report_dict_only_when_nonzero(self):
         r = _report([np.zeros(10)], delay_samples=0)
         assert "delay_samples" not in r.as_dict()

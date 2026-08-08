@@ -56,7 +56,10 @@ def si_snr(reference: np.ndarray, estimate: np.ndarray) -> float:
 
 
 def detect_delay(
-    reference: np.ndarray, estimate: np.ndarray, max_lag: int = 2048
+    reference: np.ndarray,
+    estimate: np.ndarray,
+    max_lag: int = 2048,
+    window: int = 1 << 18,
 ) -> int:
     """Samples the reconstruction lags the reference by, via cross-correlation.
 
@@ -71,22 +74,52 @@ def detect_delay(
 
     Known limitation: on strongly periodic material the correlation peak can
     land on a pitch period rather than the true offset. Measuring SNAC 24 kHz
-    gives -85 samples on a sweep, -1 on speech, and 196 on a trumpet loop —
-    a codec's delay does not actually vary that way. Treat this as a hint on
-    broadband or transient-rich audio and as unreliable on sustained tones.
+    gives -40 samples on a sweep, -1 on speech, 6 on orchestral music, and
+    196 on a trumpet loop — a codec's delay does not actually vary that way.
+    Treat this as a hint on broadband or transient-rich audio and as
+    unreliable on sustained tones.
     """
     ref, est = align(reference, estimate)
-    n = ref.size
-    if n < 2:
+    if ref.size < 2:
         return 0
     ref = ref - ref.mean()
     est = est - est.mean()
     if not ref.any() or not est.any():
         return 0
-    correlation = np.correlate(est, ref, mode="full")
-    lags = np.arange(-(n - 1), n)
-    window = np.abs(lags) <= max_lag
-    return int(lags[window][int(np.argmax(np.abs(correlation[window])))])
+
+    # Delay is a constant property of the codec, so a bounded window finds it
+    # just as well as the whole track — and keeps the cost flat instead of
+    # growing with length. Correlating directly would be O(N^2): a 133-second
+    # song took ~26 minutes per codec before this.
+    ref, est = _loudest_window(ref, est, window)
+    n = ref.size
+    max_lag = min(max_lag, n - 1)
+
+    size = 1 << (2 * n - 1).bit_length()
+    spectrum = np.fft.rfft(est, size) * np.conj(np.fft.rfft(ref, size))
+    correlation = np.fft.irfft(spectrum, size)
+    lags = np.arange(-max_lag, max_lag + 1)
+    return int(lags[int(np.argmax(np.abs(correlation[lags % size])))])
+
+
+def _loudest_window(
+    reference: np.ndarray, estimate: np.ndarray, window: int
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Take the highest-energy `window` samples from both signals.
+
+    Centring on loud material rather than the start matters for real
+    recordings, which often open with silence — and silence carries no
+    alignment information.
+    """
+    n = reference.size
+    if n <= window:
+        return reference, estimate
+    blocks = n // window
+    framed = reference[: blocks * window].reshape(blocks, window)
+    energy = np.einsum("ij,ij->i", framed, framed)
+    start = int(np.argmax(energy)) * window
+    end = start + window
+    return reference[start:end], estimate[start:end]
 
 
 def shift(
