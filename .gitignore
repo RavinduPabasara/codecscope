@@ -12,3 +12,7 @@ dist/
 htmlcov/
 .mypy_cache/
 .DS_Store
+
+# Articles and drafts stay local — never published through the repo
+*article*.md
+*draft*.md
